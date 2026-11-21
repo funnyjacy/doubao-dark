@@ -64,11 +64,6 @@
         html[data-theme="dark"] {
             --dbd-text-100: #ffffffd9 !important;
         }
-        /* 仅反白没有深色变体(dark:类)的位图图标；
-           带 dark: 变体的图标站点已给白色素材，反了会变黑 */
-        html[data-theme="dark"] .dbd-button__content img:not([class*="dark:"]) {
-            filter: invert(1);
-        }
     }
     `
 
@@ -81,8 +76,31 @@
     updateTheme();
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
 
+    // 实测工具栏位图图标亮度：深色素材才反白（站点自带白色 dark: 素材不动）
+    const invertedIcons = new Set();
+    async function invertDarkIcons() {
+        const imgs = document.querySelectorAll(".dbd-button__content img");
+        for (const img of imgs) {
+            if (!img.getBoundingClientRect().width || invertedIcons.has(img.src)) continue;
+            invertedIcons.add(img.src);
+            try {
+                const bmp = await createImageBitmap(await (await fetch(img.src)).blob());
+                const ctx = new OffscreenCanvas(8, 8).getContext("2d");
+                ctx.drawImage(bmp, 0, 0, 8, 8);
+                const d = ctx.getImageData(0, 0, 8, 8).data;
+                let sum = 0, n = 0;
+                for (let i = 0; i < d.length; i += 4) {
+                    if (d[i + 3] > 128) { sum += (d[i] + d[i + 1] + d[i + 2]) / 3; n++; }
+                }
+                if (n && sum / n < 128) img.style.filter = "invert(1)";
+            } catch (e) { /* 跨域等失败时放弃该图标 */ }
+        }
+    }
+    invertDarkIcons();
+
     const observer = new MutationObserver((mutations) => {
         updateTheme();
+        invertDarkIcons();
     });
     observer.observe(document.documentElement, {
         attributes: true,
